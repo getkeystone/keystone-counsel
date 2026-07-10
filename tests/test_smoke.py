@@ -150,7 +150,7 @@ class TestAPI:
         })
         assert response.status_code == 200
         data = response.json()
-        assert "authorized" in data["answer"].lower() or "scaffold" in data["answer"].lower()
+        assert data["severity"] == "tier_0" and len(data["answer"]) > 50
 
     def test_counsel_denied_request(self, client):
         response = client.post("/counsel", json={

@@ -1,9 +1,8 @@
 """FastAPI application for Keystone Counsel.
 
 Authorization-first retrieval for regulated content. On startup:
-register demo advisors, initialize audit chain, configure OTel.
-RAG pipeline is a stub in this scaffold; wired to Ollama in the
-next commit.
+register demo advisors, load and embed corpus, initialize audit chain.
+RAG pipeline wired to Ollama on ZenithForge.
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ from keystone_counsel import __version__
 from keystone_counsel.audit import AuditChain
 from keystone_counsel.auth import authorize_retrieval, get_advisor_store
 from keystone_counsel.config import get_settings
+from keystone_counsel.corpus import load_corpus
 from keystone_counsel.models import (
     AdvisorProfile,
     AdvisorRole,
@@ -28,11 +28,14 @@ from keystone_counsel.models import (
     SeverityTier,
 )
 from keystone_counsel.observability import setup_telemetry
+from keystone_counsel.rag import CounselRAG
+from keystone_counsel.vectorstore import InMemoryVectorStore
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 _audit: AuditChain | None = None
+_rag: CounselRAG | None = None
 
 
 def _register_demo_advisors() -> None:
@@ -65,12 +68,45 @@ def _register_demo_advisors() -> None:
     logger.info("Registered 4 demo advisor profiles")
 
 
+async def _load_and_index_corpus(rag: CounselRAG) -> None:
+    """Load corpus from classified directories and embed into vectorstore."""
+    settings = get_settings()
+    chunks = load_corpus(settings.corpus_dir)
+
+    if not chunks:
+        logger.warning("No corpus chunks loaded. RAG will operate in fail-closed mode.")
+        return
+
+    logger.info("Embedding %d chunks (this may take a moment)...", len(chunks))
+    try:
+        texts = [c.content for c in chunks]
+        embeddings = await rag.embed_batch(texts)
+        for chunk, embedding in zip(chunks, embeddings):
+            rag.vectorstore.add(chunk, embedding)
+        rag.mark_ready()
+        logger.info(
+            "Corpus indexed: %d chunks across %d classifications. RAG is ready.",
+            rag.vectorstore.size,
+            len(set(c.classification for c in chunks)),
+        )
+    except Exception as e:
+        logger.warning(
+            "Failed to embed corpus (Ollama unreachable?): %s. "
+            "RAG will operate in fail-closed mode.",
+            e,
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _audit
+    global _audit, _rag
 
     _register_demo_advisors()
     _audit = AuditChain()
+
+    vectorstore = InMemoryVectorStore()
+    _rag = CounselRAG(vectorstore=vectorstore)
+    await _load_and_index_corpus(_rag)
 
     logger.info("Keystone Counsel v%s ready", __version__)
     yield
@@ -102,14 +138,15 @@ async def counsel(request: CounselRequest) -> CounselResponse:
     """Authorization-first retrieval endpoint.
 
     Pipeline:
-    1. Resolve advisor profile
+    1. Audit open
     2. Determine document classifications to search
     3. Authorize each classification (fail-closed on any denial)
-    4. Retrieve from authorized corpus (stub in scaffold)
-    5. Generate response with citations (stub in scaffold)
-    6. Audit the full decision chain
+    4. Retrieve from authorized corpus via RAG
+    5. Generate response with citations
+    6. Audit close
     """
     assert _audit is not None, "Audit chain not initialized"
+    assert _rag is not None, "RAG pipeline not initialized"
 
     # 1. Audit open
     opening = _audit.append(
@@ -195,38 +232,58 @@ async def counsel(request: CounselRequest) -> CounselResponse:
             fail_closed=True,
         )
 
-    # 4. Retrieve (stub: fail-closed until RAG is wired)
-    # In the next commit, this calls the RAG pipeline with
-    # authorized_classifications as the ACL filter.
-    _audit.append(
-        event_type="retrieval.stub",
-        actor="counsel-orchestrator",
-        payload={
-            "authorized_classifications": [c.value for c in authorized_classifications],
-            "denied_classifications": denied_classifications,
-            "status": "stub_fail_closed",
-        },
+    # 4. Retrieve and generate via RAG (classification-filtered)
+    rag_response = await _rag.retrieve_and_generate(
+        query=request.query,
+        allowed_classifications=[c.value for c in authorized_classifications],
     )
 
+    # 5. Build response
+    if rag_response.fail_closed:
+        severity = SeverityTier.TIER_2
+        answer = (
+            "Unable to retrieve a confident response from authorized documents. "
+            "Please consult the relevant regulatory authority or legal counsel."
+        )
+    else:
+        severity = SeverityTier.TIER_0
+        answer = rag_response.answer
+
+    citations = [
+        {
+            "chunk_id": c.chunk_id,
+            "source": c.source_document,
+            "section": c.section,
+            "classification": c.classification,
+            "score": c.similarity_score,
+        }
+        for c in rag_response.retrieved_chunks
+    ]
+
+    # 6. Audit close
     closing = _audit.append(
         event_type="response.generated",
         actor="counsel-orchestrator",
         payload={
-            "severity": SeverityTier.TIER_2.value,
-            "fail_closed": True,
-            "reason": "RAG pipeline not yet wired (scaffold mode)",
-            "authorized_count": len(authorized_classifications),
+            "severity": severity.value,
+            "fail_closed": rag_response.fail_closed,
+            "fail_reason": rag_response.fail_reason,
+            "model_used": rag_response.model_used,
+            "confidence": rag_response.confidence_score,
+            "authorized_classifications": [c.value for c in authorized_classifications],
+            "denied_classifications": denied_classifications,
+            "chunk_count": len(rag_response.retrieved_chunks),
+            "input_tokens": rag_response.input_tokens,
+            "output_tokens": rag_response.output_tokens,
+            "latency_ms": round(rag_response.latency_ms, 1),
         },
     )
 
     return CounselResponse(
         query=request.query,
-        answer=(
-            f"Retrieval authorized for {len(authorized_classifications)} classification(s). "
-            f"RAG pipeline not yet wired. This is the scaffold response."
-        ),
-        severity=SeverityTier.TIER_2,
-        citations=[],
+        answer=answer,
+        severity=severity,
+        citations=citations,
         audit_hash=closing.curr_hash,
-        fail_closed=True,
+        fail_closed=rag_response.fail_closed,
     )
