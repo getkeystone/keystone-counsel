@@ -112,7 +112,7 @@ class PgVectorStore:
                        classification, evidence_tier, jurisdiction, client_id,
                        1 - (embedding <=> %s) AS similarity
                 FROM chunks
-                WHERE classification = ANY(%s)
+                WHERE classification = ANY(%s::doc_classification[])
                 ORDER BY embedding <=> %s
                 LIMIT %s
             """

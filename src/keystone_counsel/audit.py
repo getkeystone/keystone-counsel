@@ -48,6 +48,7 @@ class AuditChain:
         event_type: str,
         actor: str,
         payload: dict[str, Any] | None = None,
+        **kwargs,  # substrate fields accepted, ignored in JSONL mode
     ) -> AuditEntry:
         entry = AuditEntry(
             timestamp=datetime.now(timezone.utc),

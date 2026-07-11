@@ -199,6 +199,8 @@ async def counsel(request: CounselRequest) -> CounselResponse:
             "query_length": len(request.query),
             "jurisdiction": request.jurisdiction or "",
         },
+        agent_id='counsel-agent-v1',
+        tempo='medium',
     )
 
     # 2. Determine classifications to check
@@ -212,6 +214,8 @@ async def counsel(request: CounselRequest) -> CounselResponse:
                 event_type="authorization.invalid_classification",
                 actor="counsel-orchestrator",
                 payload={"error": str(e)},
+                agent_id="counsel-agent-v1",
+                tempo="medium",
             )
             return CounselResponse(
                 query=request.query,
@@ -247,6 +251,8 @@ async def counsel(request: CounselRequest) -> CounselResponse:
                 "allowed": authz.allowed,
                 "reason": authz.reason,
             },
+            agent_id="counsel-agent-v1",
+            tempo="medium",
         )
         if authz.allowed:
             authorized_classifications.append(classification)
@@ -261,6 +267,8 @@ async def counsel(request: CounselRequest) -> CounselResponse:
                 "advisor_id": request.advisor_id,
                 "denied": denied_classifications,
             },
+            agent_id="counsel-agent-v1",
+            tempo="medium",
         )
         return CounselResponse(
             query=request.query,
@@ -316,6 +324,13 @@ async def counsel(request: CounselRequest) -> CounselResponse:
             "output_tokens": rag_response.output_tokens,
             "latency_ms": round(rag_response.latency_ms, 1),
         },
+        agent_id="counsel-agent-v1",
+        tempo="medium",
+        input_tokens=rag_response.input_tokens,
+        output_tokens=rag_response.output_tokens,
+        model_used=rag_response.model_used,
+        cost_cents=0,
+        latency_ms=round(rag_response.latency_ms),
     )
 
     return CounselResponse(
