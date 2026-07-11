@@ -20,3 +20,9 @@ corpus-stats:
 	@echo ""
 	@echo "Corpus categories:"
 	@ls -d data/corpus/*/ 2>/dev/null | while read d; do echo "  $$(basename $$d): $$(find $$d -name '*.md' | wc -l) files"; done
+
+eval:
+	uv run python -m keystone_counsel.eval
+
+eval-run:
+	uv run python -m keystone_counsel.eval $(BASE_URL)
