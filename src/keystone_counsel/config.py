@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = {"env_prefix": "KEYSTONE_"}
+    model_config = {"env_prefix": "KEYSTONE_", "env_file": ".env"}
 
     database_url: str = ""
     ollama_base_url: str = "http://100.112.161.86:11434"
