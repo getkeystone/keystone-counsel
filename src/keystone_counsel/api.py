@@ -1,8 +1,8 @@
 """FastAPI application for Keystone Counsel.
 
 Authorization-first retrieval for regulated content. On startup:
-register demo advisors, load and embed corpus, initialize audit chain.
-RAG pipeline wired to Ollama on ZenithForge.
+register demo advisors, choose vectorstore and audit backend based
+on config, load and embed corpus, configure OTel.
 """
 
 from __future__ import annotations
@@ -68,13 +68,51 @@ def _register_demo_advisors() -> None:
     logger.info("Registered 4 demo advisor profiles")
 
 
-async def _load_and_index_corpus(rag: CounselRAG) -> None:
+def _create_vectorstore():
+    """Choose vectorstore backend based on config."""
+    settings = get_settings()
+    if settings.database_url:
+        try:
+            from keystone_counsel.pgvectorstore import PgVectorStore
+            store = PgVectorStore(settings.database_url)
+            logger.info("Using PgVectorStore on AnchorNode")
+            return store
+        except Exception as e:
+            logger.warning("PgVectorStore failed (%s), falling back to in-memory", e)
+    logger.info("Using InMemoryVectorStore")
+    return InMemoryVectorStore()
+
+
+def _create_audit():
+    """Choose audit backend based on config."""
+    settings = get_settings()
+    if settings.database_url:
+        try:
+            from keystone_counsel.pgaudit import PgAuditChain
+            audit = PgAuditChain(settings.database_url)
+            logger.info("Using PgAuditChain on AnchorNode")
+            return audit
+        except Exception as e:
+            logger.warning("PgAuditChain failed (%s), falling back to JSONL", e)
+    logger.info("Using JSONL AuditChain")
+    return AuditChain()
+
+
+async def _load_and_index_corpus(rag: CounselRAG, store_is_pg: bool) -> None:
     """Load corpus from classified directories and embed into vectorstore."""
     settings = get_settings()
     chunks = load_corpus(settings.corpus_dir)
 
     if not chunks:
         logger.warning("No corpus chunks loaded. RAG will operate in fail-closed mode.")
+        return
+
+    if store_is_pg and rag.vectorstore.size > 0:
+        logger.info(
+            "PgVectorStore already has %d chunks. Skipping re-embedding.",
+            rag.vectorstore.size,
+        )
+        rag.mark_ready()
         return
 
     logger.info("Embedding %d chunks (this may take a moment)...", len(chunks))
@@ -102,11 +140,14 @@ async def lifespan(app: FastAPI):
     global _audit, _rag
 
     _register_demo_advisors()
-    _audit = AuditChain()
 
-    vectorstore = InMemoryVectorStore()
+    vectorstore = _create_vectorstore()
+    store_is_pg = not isinstance(vectorstore, InMemoryVectorStore)
+
+    _audit = _create_audit()
+
     _rag = CounselRAG(vectorstore=vectorstore)
-    await _load_and_index_corpus(_rag)
+    await _load_and_index_corpus(_rag, store_is_pg)
 
     logger.info("Keystone Counsel v%s ready", __version__)
     yield
@@ -180,7 +221,6 @@ async def counsel(request: CounselRequest) -> CounselResponse:
                 fail_closed=True,
             )
     else:
-        # Default: check all non-privileged classifications
         classifications = [
             DocumentClassification.REGULATORY_GUIDANCE,
             DocumentClassification.SUITABILITY_ASSESSMENT,
@@ -213,7 +253,6 @@ async def counsel(request: CounselRequest) -> CounselResponse:
         else:
             denied_classifications.append(classification.value)
 
-    # Fail-closed: if no classifications are authorized, deny entirely
     if not authorized_classifications:
         _audit.append(
             event_type="authorization.denied_all",
