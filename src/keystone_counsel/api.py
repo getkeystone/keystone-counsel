@@ -75,7 +75,7 @@ def _create_vectorstore():
         try:
             from keystone_counsel.pgvectorstore import PgVectorStore
             store = PgVectorStore(settings.database_url)
-            logger.info("Using PgVectorStore on AnchorNode")
+            logger.info("Using PgVectorStore on Data-Plane")
             return store
         except Exception as e:
             logger.warning("PgVectorStore failed (%s), falling back to in-memory", e)
@@ -90,7 +90,7 @@ def _create_audit():
         try:
             from keystone_counsel.pgaudit import PgAuditChain
             audit = PgAuditChain(settings.database_url)
-            logger.info("Using PgAuditChain on AnchorNode")
+            logger.info("Using PgAuditChain on Data-Plane")
             return audit
         except Exception as e:
             logger.warning("PgAuditChain failed (%s), falling back to JSONL", e)
@@ -167,6 +167,46 @@ app = FastAPI(
 )
 
 _tracer = setup_telemetry(app)
+
+
+# --- CORS (local lab / operator surface access) -------------------------------
+# Default: an explicit allow-list of localhost origins so the private Platform
+# Lab (served over http://localhost) can READ responses from a browser —
+# cross-origin browser POSTs otherwise fail preflight. This is deliberately
+# NOT permissive: no wildcard and no file:// (null) origin by default.
+#
+# Opt-in knobs (local demo only):
+#   KEYSTONE_CORS_ORIGINS="http://localhost:5173,..."  → replace the allow-list
+#   KEYSTONE_CORS_ORIGINS="*"                          → wildcard (discouraged)
+#   KEYSTONE_CORS_ALLOW_FILE="1"                       → also allow "null" (file://)
+#
+# Auth is Bearer-token in the Authorization header (no cookies), so
+# allow_credentials stays False.
+import os
+from fastapi.middleware.cors import CORSMiddleware
+
+_cors_env = os.environ.get("KEYSTONE_CORS_ORIGINS", "").strip()
+if _cors_env == "*":
+    _cors_origins = ["*"]
+elif _cors_env:
+    _cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+else:
+    _cors_origins = [
+        "http://localhost:8082", "http://127.0.0.1:8082",
+        "http://localhost:8000", "http://127.0.0.1:8000",
+        "http://localhost:5500", "http://127.0.0.1:5500",
+    ]
+# file:// (null) origin is opt-in only — keep it out of the default policy.
+if os.environ.get("KEYSTONE_CORS_ALLOW_FILE", "").strip() in ("1", "true", "True") \
+        and "*" not in _cors_origins and "null" not in _cors_origins:
+    _cors_origins = _cors_origins + ["null"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health", response_model=HealthResponse)
