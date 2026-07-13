@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     model_config = {"env_prefix": "KEYSTONE_", "env_file": ".env"}
 
     database_url: str = ""
-    ollama_base_url: str = "http://100.112.161.86:11434"
+    ollama_base_url: str = "http://localhost:11434"
     ollama_chat_model: str = "qwen2.5:7b-instruct"
     ollama_embed_model: str = "nomic-embed-text"
     retrieval_top_k: int = 5

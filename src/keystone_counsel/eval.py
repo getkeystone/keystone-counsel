@@ -5,7 +5,7 @@ denials, fail-closed behavior, citation presence, and content assertions.
 
 Usage:
   uv run python -m keystone_counsel.eval [base_url]
-  uv run python -m keystone_counsel.eval http://100.90.230.74:8200
+  uv run python -m keystone_counsel.eval http://localhost:8200
 """
 
 from __future__ import annotations

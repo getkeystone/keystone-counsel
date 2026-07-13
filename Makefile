@@ -1,6 +1,6 @@
 .PHONY: run test lint fmt corpus-stats
 
-BASE_URL ?= http://100.90.230.74:8200
+BASE_URL ?= http://localhost:8200
 
 run:
 	uv run uvicorn keystone_counsel.api:app --host 0.0.0.0 --port 8200 --reload

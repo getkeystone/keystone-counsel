@@ -27,7 +27,7 @@ class PgAuditChain:
     def __init__(self, database_url: str) -> None:
         self._database_url = database_url
         self._last_hash = self._read_last_hash()
-        logger.info("PgAuditChain: connected to AnchorNode")
+        logger.info("PgAuditChain: connected to Data-Plane")
 
     @contextmanager
     def _conn(self) -> Generator:

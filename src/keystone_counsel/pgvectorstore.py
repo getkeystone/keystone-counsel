@@ -56,7 +56,7 @@ class PgVectorStore:
                 )
                 if cur.fetchone()[0] == 0:
                     raise RuntimeError("chunks table not found. Run migration first.")
-        logger.info("PgVectorStore: table verified on AnchorNode")
+        logger.info("PgVectorStore: table verified on Data-Plane")
 
     @property
     def size(self) -> int:

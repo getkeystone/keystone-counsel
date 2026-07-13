@@ -52,7 +52,7 @@ Every authorization request sends this input to the policy engine:
 
 ## Migration steps
 
-1. Deploy OPA as a sidecar on AnchorNode (or ForgePrime)
+1. Deploy OPA as a sidecar on Data-Plane (or Control-Plane)
 2. Write the Rego policy encoding the access matrix
 3. Write policy unit tests
 4. Update `authorize_retrieval()` to call OPA HTTP API
