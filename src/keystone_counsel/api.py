@@ -319,10 +319,13 @@ async def counsel(request: CounselRequest) -> CounselResponse:
             fail_closed=True,
         )
 
-    # 4. Retrieve and generate via RAG (classification-filtered)
+    # 4. Retrieve and generate via RAG (classification- and client-filtered).
+    #    request.client_id scopes retrieval to global content plus this client's
+    #    rows; other clients' chunks are excluded at the retrieval layer.
     rag_response = await _rag.retrieve_and_generate(
         query=request.query,
         allowed_classifications=[c.value for c in authorized_classifications],
+        client_id=request.client_id,
     )
 
     # 5. Build response

@@ -59,22 +59,36 @@ class InMemoryVectorStore:
         query_embedding: list[float],
         k: int = 5,
         allowed_classifications: list[str] | None = None,
+        caller_client_id: str | None = None,
     ) -> list[QueryResult]:
-        """Query with optional classification filtering.
+        """Query with classification and client filtering.
 
-        If allowed_classifications is provided, only chunks with a matching
-        classification are eligible. This is the authorization gate at the
-        retrieval layer: denied classifications never appear in results.
+        Two authorization gates run at the retrieval layer:
+
+          1. classification: if allowed_classifications is provided, only
+             chunks with a matching classification are eligible.
+          2. client isolation: global chunks (client_id None) are eligible for
+             any caller; a client-specific chunk is eligible only when its
+             client_id equals caller_client_id. Fail-closed: when
+             caller_client_id is None, every client-specific chunk is skipped
+             and only global content is returned.
+
+        This mirrors the pgvector WHERE-clause predicate so both backends
+        enforce the same boundary.
         """
         if not self._chunks:
             return []
 
         scored: list[tuple[int, float]] = []
         for i, emb in enumerate(self._embeddings):
+            chunk = self._chunks[i]
             # Classification filter
             if allowed_classifications is not None:
-                if self._chunks[i].classification not in allowed_classifications:
+                if chunk.classification not in allowed_classifications:
                     continue
+            # Client-isolation filter (fail-closed on no client context).
+            if chunk.client_id is not None and chunk.client_id != caller_client_id:
+                continue
             score = self._cosine_similarity(query_embedding, emb)
             scored.append((i, score))
 

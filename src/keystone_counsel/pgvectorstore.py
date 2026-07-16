@@ -96,37 +96,57 @@ class PgVectorStore:
         query_embedding: list[float],
         k: int = 5,
         allowed_classifications: list[str] | None = None,
+        caller_client_id: str | None = None,
     ) -> list[QueryResult]:
-        """Classification-filtered similarity search.
+        """Classification- and client-filtered similarity search.
 
-        The WHERE clause on classification is the ACL gate. It fires
-        before the vector similarity operator, so denied classifications
-        are excluded at the database level. This is not application-level
-        filtering; the database enforces the boundary.
+        Two ACL gates fire in the WHERE clause before the vector similarity
+        operator, so denied rows are excluded at the database level (not
+        application-level filtering):
+
+          1. classification = ANY(:classes) -- authorized classifications only.
+          2. (client_id IS NULL OR client_id = :caller_client_id) -- global
+             content (client_id NULL) is visible to any authorized caller;
+             client-specific content is visible only to the matching client.
+
+        Client isolation is fail-closed: when caller_client_id is None, the
+        predicate collapses to `client_id IS NULL`, so only global content is
+        returned and zero client-specific rows leak. The client predicate is
+        applied in both the classification-filtered and the unfiltered branch.
         """
         emb_array = np.array(query_embedding, dtype=np.float32)
 
+        # Client-isolation predicate (fail-closed on no client context).
+        if caller_client_id is not None:
+            client_pred = "(client_id IS NULL OR client_id = %s)"
+            client_param: tuple = (caller_client_id,)
+        else:
+            client_pred = "client_id IS NULL"
+            client_param = ()
+
         if allowed_classifications:
-            sql = """
+            sql = f"""
                 SELECT chunk_id, content, source_document, section,
                        classification, evidence_tier, jurisdiction, client_id,
                        1 - (embedding <=> %s) AS similarity
                 FROM chunks
                 WHERE classification = ANY(%s::doc_classification[])
+                  AND {client_pred}
                 ORDER BY embedding <=> %s
                 LIMIT %s
             """
-            params = (emb_array, allowed_classifications, emb_array, k)
+            params = (emb_array, allowed_classifications, *client_param, emb_array, k)
         else:
-            sql = """
+            sql = f"""
                 SELECT chunk_id, content, source_document, section,
                        classification, evidence_tier, jurisdiction, client_id,
                        1 - (embedding <=> %s) AS similarity
                 FROM chunks
+                WHERE {client_pred}
                 ORDER BY embedding <=> %s
                 LIMIT %s
             """
-            params = (emb_array, emb_array, k)
+            params = (emb_array, *client_param, emb_array, k)
 
         with self._conn() as conn:
             with conn.cursor() as cur:

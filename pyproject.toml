@@ -2,6 +2,7 @@
 name = "keystone-counsel"
 version = "0.1.0"
 description = "Regulated content RAG for legal and financial advisory. Part of the Keystone Applied Intelligence platform."
+license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",

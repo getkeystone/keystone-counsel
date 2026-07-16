@@ -115,14 +115,19 @@ class CounselRAG:
         self,
         query: str,
         allowed_classifications: list[str] | None = None,
+        client_id: str | None = None,
         max_chunks: int | None = None,
     ) -> RAGResponse:
         """Retrieve relevant chunks and generate a governed response.
 
         allowed_classifications: only chunks from these classifications
-        are eligible. This is the authorization-at-retrieval gate.
-        The caller (api.py) determines the authorized set based on the
-        advisor's role and client relationships.
+        are eligible. This is the classification authorization-at-retrieval gate.
+        client_id: the client context of this request. Global chunks (client_id
+        None) are eligible for any caller; client-specific chunks are eligible
+        only for the matching client. When None, only global content is
+        returned (fail-closed for client-specific data). The caller (api.py)
+        determines both dimensions from the advisor's role and client
+        relationship.
         """
         top_k = max_chunks or self.top_k
         start_time = time.monotonic()
@@ -151,6 +156,7 @@ class CounselRAG:
             query_embedding,
             k=top_k,
             allowed_classifications=allowed_classifications,
+            caller_client_id=client_id,
         )
 
         if not results:
