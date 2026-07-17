@@ -42,6 +42,8 @@ Global content (client_id NULL, such as public regulatory guidance) is retrievab
 
 Client isolation was added recently. Earlier, retrieval filtered on classification only, so an advisor scoped to one client could retrieve another client's same-classification chunks. A regression test, `test_cross_client_retrieval_denied` (`tests/test_cross_client.py`), proves cross-client denial on both the classification-filtered and the unfiltered retrieval branches.
 
+The shipped corpus is entirely global content (client_id NULL). The client isolation path is enforced and covered by regression tests, but no client-specific documents are currently in the corpus.
+
 ## Evaluation
 
 The published eval is a retrieval evaluation over a 32-chunk corpus spanning four document classifications. It measures classification-aware filtering and confidence-threshold behavior. It does not test client isolation.
