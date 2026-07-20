@@ -56,10 +56,10 @@ The confidence threshold defaults to 0.50 in code (`config.py`) and is configura
 
 ## Related repos
 
-- [keystone-ledger](https://github.com/getkeystone/keystone-ledger): evaluation lineage and proof artifacts. Public shortly.
+- [keystone-ledger](https://github.com/getkeystone/keystone-ledger): evaluation lineage and proof artifacts. Public.
 - [keystone-verify](https://github.com/getkeystone/keystone-verify): the evaluation framework as a standalone tool. Public.
-- [keystone-engage](https://github.com/getkeystone/keystone-engage): governed conversational agent for regulated customer interaction. Public shortly.
-- [keystone-gov](https://github.com/getkeystone/keystone-gov): governed RAG for regulated enterprise content. Public shortly.
+- [keystone-engage](https://github.com/getkeystone/keystone-engage): governed conversational agent for regulated customer interaction. Public.
+- [keystone-gov](https://github.com/getkeystone/keystone-gov): governed RAG for regulated enterprise content. Public.
 
 ## License
 
